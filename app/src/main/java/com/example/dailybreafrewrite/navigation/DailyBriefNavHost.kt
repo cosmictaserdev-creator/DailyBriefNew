@@ -10,7 +10,6 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.example.dailybreafrewrite.core.ui.component.NavTab
 import com.example.dailybreafrewrite.feature.home.HomeScreen
-import com.example.dailybreafrewrite.feature.onboarding.OnboardingScreen
 import com.example.dailybreafrewrite.feature.saved.SavedScreen
 import com.example.dailybreafrewrite.feature.search.SearchScreen
 
@@ -53,9 +52,6 @@ fun DailyBriefNavGraph(
         composable<Route.ArticleDetail> { backStackEntry ->
             val route = backStackEntry.toRoute<Route.ArticleDetail>()
             ArticleDetailScreen(url = route.url)
-        }
-        composable<Route.Onboarding> {
-            OnboardingScreen()
         }
     }
 }
