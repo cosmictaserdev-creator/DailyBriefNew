@@ -9,19 +9,16 @@ plugins {
 
 android {
     namespace = "com.example.dailybreafrewrite"
-    compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
-    }
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.example.dailybreafrewrite"
         minSdk = 24
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 1
         versionName = "1.0"
 
+        buildConfigField("String", "NEWS_API_KEY", "\"${findProperty("NEWS_API_KEY") ?: ""}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -47,6 +44,15 @@ android {
 }
 
 dependencies {
+    implementation(project(":core:common"))
+    implementation(project(":core:domain"))
+    implementation(project(":core:data"))
+    implementation(project(":core:ui"))
+    implementation(project(":feature:home"))
+    implementation(project(":feature:search"))
+    implementation(project(":feature:saved"))
+    implementation(project(":feature:onboarding"))
+
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
@@ -70,7 +76,6 @@ dependencies {
 
     // Navigation
     implementation(libs.navigation.compose)
-    implementation(libs.navigation3)
 
     // Serialization
     implementation(libs.kotlinx.serialization.json)
