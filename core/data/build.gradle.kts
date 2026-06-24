@@ -41,6 +41,12 @@ dependencies {
     implementation(libs.retrofit)
     implementation(libs.retrofit.serialization)
 
+    // OkHttp
+    implementation(libs.okhttp.logging)
+
+    // Timber
+    implementation(libs.timber)
+
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
