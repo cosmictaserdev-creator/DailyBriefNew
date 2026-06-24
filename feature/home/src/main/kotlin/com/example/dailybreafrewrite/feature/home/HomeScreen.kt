@@ -73,7 +73,9 @@ fun HomeScreen(
                     CardStackLayout(
                         articles = state.articles,
                         onSwipedLeft = { viewModel.onAction(HomeAction.SwipeLeft) },
-                        onSwipedRight = { viewModel.onAction(HomeAction.SwipeRight) },
+                        onSwipedRight = { article ->
+                            viewModel.onAction(HomeAction.ToggleSaved(article.url))
+                        },
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(horizontal = 8.dp),

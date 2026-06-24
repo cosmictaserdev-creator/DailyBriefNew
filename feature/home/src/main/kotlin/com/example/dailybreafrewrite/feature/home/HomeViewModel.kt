@@ -30,6 +30,7 @@ sealed interface HomeAction {
     data class SelectCategory(val category: String) : HomeAction
     data object SwipeLeft : HomeAction
     data object SwipeRight : HomeAction
+    data class ToggleSaved(val url: String) : HomeAction
     data object TappedCard : HomeAction
     data object Refresh : HomeAction
     data object DismissError : HomeAction
@@ -58,6 +59,7 @@ class HomeViewModel @Inject constructor(
             }
             HomeAction.SwipeLeft -> onCardSwiped()
             HomeAction.SwipeRight -> onCardSwiped()
+            is HomeAction.ToggleSaved -> toggleSaved(action.url)
             HomeAction.TappedCard -> { }
             HomeAction.Refresh -> pullToRefresh()
             HomeAction.DismissError -> _state.update { it.copy(error = null) }
@@ -86,6 +88,12 @@ class HomeViewModel @Inject constructor(
                     is Resource.Success -> { }
                 }
             }
+        }
+    }
+
+    private fun toggleSaved(url: String) {
+        viewModelScope.launch {
+            repository.toggleSaved(url)
         }
     }
 
