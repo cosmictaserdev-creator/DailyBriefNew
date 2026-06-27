@@ -1,7 +1,11 @@
 package com.example.dailybreafrewrite.navigation
 
+import android.net.Uri
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -41,21 +45,38 @@ fun DailyBriefNavGraph(
         modifier = modifier,
     ) {
         composable<Route.Home> {
-            HomeScreen()
+            HomeScreen(
+                onArticleTapped = { url ->
+                    navController.navigate(Route.ArticleDetail(url = url))
+                },
+            )
         }
         composable<Route.Search> {
-            SearchScreen()
+            SearchScreen(
+                onArticleTapped = { url ->
+                    navController.navigate(Route.ArticleDetail(url = url))
+                },
+            )
         }
         composable<Route.Saved> {
-            SavedScreen()
+            SavedScreen(
+                onArticleTapped = { url ->
+                    navController.navigate(Route.ArticleDetail(url = url))
+                },
+            )
         }
         composable<Route.ArticleDetail> { backStackEntry ->
             val route = backStackEntry.toRoute<Route.ArticleDetail>()
-            ArticleDetailScreen(url = route.url)
+            val context = LocalContext.current
+            LaunchedEffect(route.url) {
+                val customTabsIntent = CustomTabsIntent.Builder()
+                    .setShowTitle(true)
+                    .build()
+                customTabsIntent.launchUrl(context, Uri.parse(route.url))
+                navController.popBackStack()
+            }
         }
     }
 }
 
-@Composable
-private fun ArticleDetailScreen(url: String) {
-}
+

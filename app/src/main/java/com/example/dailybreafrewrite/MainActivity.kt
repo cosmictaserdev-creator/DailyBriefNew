@@ -6,7 +6,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Scaffold
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,8 +34,10 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             DailyBriefTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { _ ->
-                    DailyBriefApp()
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    Box(modifier = Modifier.fillMaxSize().systemBarsPadding()) {
+                        DailyBriefApp()
+                    }
                 }
             }
         }

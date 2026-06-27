@@ -28,7 +28,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -62,6 +62,7 @@ import com.example.dailybreafrewrite.core.domain.model.Article
 fun SearchScreen(
     modifier: Modifier = Modifier,
     viewModel: SearchViewModel = hiltViewModel(),
+    onArticleTapped: (url: String) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
 
@@ -70,7 +71,7 @@ fun SearchScreen(
             .fillMaxSize()
             .padding(horizontal = 16.dp),
     ) {
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         SearchInput(
             query = state.query,
@@ -92,6 +93,7 @@ fun SearchScreen(
         } else {
             SearchResults(
                 results = state.results,
+                onArticleTapped = onArticleTapped,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -163,7 +165,7 @@ private fun TrendingSection(
             modifier = Modifier.padding(vertical = 8.dp),
         ) {
             Icon(
-                imageVector = Icons.Default.TrendingUp,
+                imageVector =                 Icons.AutoMirrored.Filled.TrendingUp,
                 contentDescription = null,
                 tint = Color(0xFF8E8E93),
                 modifier = Modifier.size(20.dp),
@@ -215,6 +217,7 @@ private fun TrendingChip(
 @Composable
 private fun SearchResults(
     results: List<Article>,
+    onArticleTapped: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -229,6 +232,7 @@ private fun SearchResults(
             StaggeredSearchResultItem(
                 article = article,
                 index = index,
+                onArticleTapped = onArticleTapped,
             )
         }
     }
@@ -238,6 +242,7 @@ private fun SearchResults(
 private fun StaggeredSearchResultItem(
     article: Article,
     index: Int,
+    onArticleTapped: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var visible by remember { mutableStateOf(false) }
@@ -263,6 +268,7 @@ private fun StaggeredSearchResultItem(
     ) {
         SearchResultCard(
             article = article,
+            onClick = { onArticleTapped(article.url) },
             modifier = modifier,
         )
     }
@@ -271,10 +277,13 @@ private fun StaggeredSearchResultItem(
 @Composable
 private fun SearchResultCard(
     article: Article,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF1C1C1E)),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),

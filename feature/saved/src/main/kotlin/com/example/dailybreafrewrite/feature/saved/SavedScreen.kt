@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -48,6 +49,7 @@ import kotlin.math.sin
 fun SavedScreen(
     modifier: Modifier = Modifier,
     viewModel: SavedViewModel = hiltViewModel(),
+    onArticleTapped: (url: String) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
 
@@ -56,7 +58,7 @@ fun SavedScreen(
             .fillMaxSize()
             .padding(horizontal = 16.dp),
     ) {
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         OutlinedTextField(
             value = state.searchQuery,
@@ -96,6 +98,7 @@ fun SavedScreen(
             SavedFanStack(
                 articles = filtered,
                 onToggleSaved = { viewModel.onAction(SavedAction.ToggleSaved(it)) },
+                onArticleTapped = onArticleTapped,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -106,10 +109,12 @@ fun SavedScreen(
 private fun SavedFanStack(
     articles: List<Article>,
     onToggleSaved: (String) -> Unit,
+    onArticleTapped: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
         modifier = modifier,
+        contentPadding = PaddingValues(bottom = 80.dp),
     ) {
         itemsIndexed(
             items = articles,
@@ -120,6 +125,7 @@ private fun SavedFanStack(
                 article = article,
                 rotation = rotation,
                 onToggleSaved = { onToggleSaved(article.url) },
+                onCardTapped = { onArticleTapped(article.url) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 4.dp),
@@ -134,6 +140,7 @@ private fun SavedFanCard(
     article: Article,
     rotation: Float,
     onToggleSaved: () -> Unit,
+    onCardTapped: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val animatedRotation by animateFloatAsState(
@@ -148,7 +155,7 @@ private fun SavedFanCard(
                 rotationZ = animatedRotation
                 translationY = 0f
             }
-            .clickable { /* open article detail */ },
+            .clickable(onClick = onCardTapped),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF1C1C1E)),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),

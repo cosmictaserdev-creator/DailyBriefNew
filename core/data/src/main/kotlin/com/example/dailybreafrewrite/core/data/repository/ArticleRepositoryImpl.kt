@@ -11,6 +11,7 @@ import com.example.dailybreafrewrite.core.domain.repository.ArticleRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import timber.log.Timber
 import javax.inject.Inject
 
 class ArticleRepositoryImpl @Inject constructor(
@@ -38,11 +39,17 @@ class ArticleRepositoryImpl @Inject constructor(
 
     override suspend fun refreshHeadlines(category: String, page: Int): Resource<Unit> {
         return try {
-            val response = api.getTopHeadlines(category = category, page = page)
+            Timber.d("refreshHeadlines: calling API for category=$category page=$page")
+            val apiCategory = if (category == "Trending") null else category
+            val response = api.getTopHeadlines(category = apiCategory, page = page)
+            Timber.d("refreshHeadlines: status=${response.status} totalResults=${response.totalResults} articles=${response.articles.size}")
             val entities = response.articles.map { it.toArticleEntity(category) }
+            Timber.d("refreshHeadlines: upserting ${entities.size} entities")
             dao.upsertAll(entities)
+            Timber.d("refreshHeadlines: success")
             Resource.Success(Unit)
         } catch (e: Exception) {
+            Timber.e(e, "refreshHeadlines: failed")
             Resource.Error(
                 message = UiText.Dynamic("Couldn't refresh news. Showing cached articles.")
             )

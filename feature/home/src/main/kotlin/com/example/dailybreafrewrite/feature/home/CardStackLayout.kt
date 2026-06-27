@@ -4,7 +4,9 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.runtime.key
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -49,6 +51,7 @@ fun CardStackLayout(
     articles: List<Article>,
     onSwipedLeft: (Article) -> Unit,
     onSwipedRight: (Article) -> Unit,
+    onCardTapped: (Article) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (articles.isEmpty()) return
@@ -60,47 +63,60 @@ fun CardStackLayout(
         val swipeThresholdPx = with(density) {
             (maxWidth * AppConstants.Card.SWIPE_DISPLACEMENT_FRACTION).toPx()
         }
+        val cardHeight = maxHeight * 0.72f
 
         val visibleArticles = articles.drop(currentIndex).take(AppConstants.Card.STACK_COUNT)
         if (visibleArticles.isEmpty()) return@BoxWithConstraints
 
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 8.dp)
-                .padding(top = 8.dp, bottom = 16.dp),
+                .fillMaxWidth()
+                .height(cardHeight)
+                .align(Alignment.TopCenter)
+                .padding(horizontal = 8.dp),
         ) {
-            visibleArticles.reversed().forEachIndexed { reversedIndex, article ->
-                val depthIndex = visibleArticles.size - 1 - reversedIndex
-                val isTop = depthIndex == 0
+            val stackSize = visibleArticles.size
+            for (stackIndex in (0 until stackSize).reversed()) {
+                val article = visibleArticles[stackIndex]
+                key(article.url) {
+                    val isTop = stackIndex == 0
+                    val scaleFactor = 1f - stackIndex * 0.07f
+                    val offsetY = (stackIndex * 16).dp
 
-                val offsetY = (depthIndex * 8).dp
-                val scaleFactor = 1f - depthIndex * AppConstants.Card.STACK_SCALE_STEP
-
-                if (isTop) {
-                    SwipeableTopCard(
-                        article = article,
-                        swipeThresholdPx = swipeThresholdPx,
-                        scaleFactor = scaleFactor,
-                        onSwipedLeft = {
-                            currentIndex++
-                            onSwipedLeft(article)
-                        },
-                        onSwipedRight = {
-                            currentIndex++
-                            onSwipedRight(article)
-                        },
-                    )
-                } else {
-                    ArticleCard(
-                        article = article,
-                        modifier = Modifier
-                            .offset(y = offsetY)
-                            .graphicsLayer {
-                                scaleX = scaleFactor
-                                scaleY = scaleFactor
+                    if (isTop) {
+                        SwipeableTopCard(
+                            article = article,
+                            swipeThresholdPx = swipeThresholdPx,
+                            onSwipedLeft = {
+                                currentIndex++
+                                onSwipedLeft(article)
                             },
-                    )
+                            onSwipedRight = {
+                                currentIndex++
+                                onSwipedRight(article)
+                            },
+                            onCardTapped = { onCardTapped(article) },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .offset(y = offsetY)
+                                .graphicsLayer {
+                                    scaleX = scaleFactor
+                                    scaleY = scaleFactor
+                                },
+                        )
+                    } else {
+                        ArticleCard(
+                            article = article,
+                            onClick = { onCardTapped(article) },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .offset(y = offsetY)
+                                .graphicsLayer {
+                                    scaleX = scaleFactor
+                                    scaleY = scaleFactor
+                                },
+                        )
+                    }
                 }
             }
         }
@@ -111,9 +127,10 @@ fun CardStackLayout(
 private fun SwipeableTopCard(
     article: Article,
     swipeThresholdPx: Float,
-    scaleFactor: Float,
     onSwipedLeft: () -> Unit,
     onSwipedRight: () -> Unit,
+    onCardTapped: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val offsetX = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
@@ -123,15 +140,13 @@ private fun SwipeableTopCard(
     val nopeAlpha = if (offsetX.value < 0) (progress * 0.9f).coerceIn(0f, 0.9f) else 0f
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .graphicsLayer {
                 translationX = offsetX.value
                 rotationZ = (offsetX.value / 20f).coerceIn(
                     -AppConstants.Card.MAX_ROTATION_DEGREES,
                     AppConstants.Card.MAX_ROTATION_DEGREES
                 )
-                scaleX = scaleFactor
-                scaleY = scaleFactor
                 alpha = (1f - progress * 0.15f).coerceIn(0.7f, 1f)
             }
             .pointerInput(Unit) {
@@ -171,7 +186,7 @@ private fun SwipeableTopCard(
                 }
             },
     ) {
-        ArticleCard(article = article)
+        ArticleCard(article = article, onClick = onCardTapped)
 
         Box(
             modifier = Modifier
@@ -206,15 +221,16 @@ private fun SwipeableTopCard(
 @Composable
 private fun ArticleCard(
     article: Article,
+    onClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Card(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.clickable(onClick = onClick),
         shape = RoundedCornerShape(AppConstants.Card.CORNER_RADIUS.dp),
         colors = CardDefaults.cardColors(
             containerColor = Color(0xFF1C1C1E),
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
     ) {
         Column(
             modifier = Modifier.fillMaxSize(),
@@ -222,7 +238,7 @@ private fun ArticleCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
+                    .weight(1.2f)
                     .clip(RoundedCornerShape(
                         topStart = AppConstants.Card.CORNER_RADIUS.dp,
                         topEnd = AppConstants.Card.CORNER_RADIUS.dp,
@@ -254,30 +270,31 @@ private fun ArticleCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .weight(0.8f)
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
             ) {
                 Text(
                     text = article.sourceName,
                     color = Color(0xFF8E8E93),
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Medium,
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = article.title,
                     color = Color.White,
-                    fontSize = 18.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                 )
                 article.description?.let { description ->
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = description,
                         color = Color(0xFF8E8E93),
-                        fontSize = 14.sp,
-                        maxLines = 2,
+                        fontSize = 12.sp,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }

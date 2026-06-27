@@ -6,6 +6,7 @@ import com.example.dailybreafrewrite.core.common.AppConstants
 import com.example.dailybreafrewrite.core.common.Resource
 import com.example.dailybreafrewrite.core.common.UiText
 import com.example.dailybreafrewrite.core.domain.model.Article
+import com.example.dailybreafrewrite.core.domain.model.FilterPreferences
 import com.example.dailybreafrewrite.core.domain.repository.ArticleRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -24,6 +25,8 @@ data class HomeUiState(
     val error: UiText? = null,
     val currentPage: Int = 1,
     val hasMorePages: Boolean = true,
+    val filterPreferences: FilterPreferences = FilterPreferences(),
+    val showFilterSheet: Boolean = false,
 )
 
 sealed interface HomeAction {
@@ -34,6 +37,9 @@ sealed interface HomeAction {
     data object TappedCard : HomeAction
     data object Refresh : HomeAction
     data object DismissError : HomeAction
+    data object ShowFilterSheet : HomeAction
+    data object HideFilterSheet : HomeAction
+    data class ApplyFilter(val filter: FilterPreferences) : HomeAction
 }
 
 @HiltViewModel
@@ -62,6 +68,16 @@ class HomeViewModel @Inject constructor(
             is HomeAction.ToggleSaved -> toggleSaved(action.url)
             HomeAction.TappedCard -> { }
             HomeAction.Refresh -> pullToRefresh()
+            HomeAction.ShowFilterSheet -> _state.update { it.copy(showFilterSheet = true) }
+            HomeAction.HideFilterSheet -> _state.update { it.copy(showFilterSheet = false) }
+            is HomeAction.ApplyFilter -> {
+                _state.update {
+                    it.copy(
+                        filterPreferences = action.filter,
+                        showFilterSheet = false,
+                    )
+                }
+            }
             HomeAction.DismissError -> _state.update { it.copy(error = null) }
         }
     }
@@ -106,8 +122,18 @@ class HomeViewModel @Inject constructor(
                 when (resource) {
                     is Resource.Success -> {
                         val articles = resource.data
-                        if (articles.isEmpty() && !_state.value.isRefreshing) {
-                            repository.refreshHeadlines(category, 1)
+                        if (articles.isEmpty()) {
+                            if (!_state.value.isRefreshing) {
+                                _state.update { it.copy(isRefreshing = true) }
+                                when (val result = repository.refreshHeadlines(category, 1)) {
+                                    is Resource.Error -> {
+                                        _state.update { it.copy(isLoading = false, isRefreshing = false, error = result.message) }
+                                    }
+                                    is Resource.Success -> {
+                                        _state.update { it.copy(isLoading = false, isRefreshing = false) }
+                                    }
+                                }
+                            }
                         } else {
                             _state.update {
                                 it.copy(

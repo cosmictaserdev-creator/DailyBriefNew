@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -6,6 +9,12 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.room)
 }
+
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) load(FileInputStream(f))
+}
+val newsApiKey: String = localProps.getProperty("NEWS_API_KEY") ?: ""
 
 android {
     namespace = "com.example.dailybreafrewrite"
@@ -18,7 +27,7 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        buildConfigField("String", "NEWS_API_KEY", "\"${findProperty("NEWS_API_KEY") ?: ""}\"")
+        buildConfigField("String", "NEWS_API_KEY", "\"$newsApiKey\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -91,6 +100,9 @@ dependencies {
 
     // Timber
     implementation(libs.timber)
+
+    // Chrome Custom Tabs
+    implementation(libs.androidx.browser)
 
     // Capsule
     implementation(libs.capsule)

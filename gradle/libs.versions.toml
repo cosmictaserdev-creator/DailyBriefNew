@@ -72,6 +72,9 @@ room-compiler = { group = "androidx.room", name = "room-compiler", version.ref =
 # Timber
 timber = { group = "com.jakewharton.timber", name = "timber", version.ref = "timber" }
 
+# Chrome Custom Tabs
+androidx-browser = { group = "androidx.browser", name = "browser", version = "1.9.0" }
+
 # Capsule
 capsule = { group = "io.github.kyant0", name = "capsule", version.ref = "capsule" }
 

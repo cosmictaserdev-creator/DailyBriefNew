@@ -5,7 +5,7 @@ import retrofit2.http.GET
 import retrofit2.http.Query
 
 interface NewsApi {
-    @GET("v2/top-headlines")
+    @GET("top-headlines")
     suspend fun getTopHeadlines(
         @Query("country") country: String = "us",
         @Query("category") category: String? = null,
@@ -13,7 +13,7 @@ interface NewsApi {
         @Query("pageSize") pageSize: Int = 20,
     ): NewsApiResponse
 
-    @GET("v2/everything")
+    @GET("everything")
     suspend fun searchNews(
         @Query("q") query: String,
         @Query("page") page: Int = 1,
