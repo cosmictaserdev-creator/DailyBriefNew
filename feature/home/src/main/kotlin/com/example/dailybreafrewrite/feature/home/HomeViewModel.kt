@@ -1,5 +1,6 @@
 package com.example.dailybreafrewrite.feature.home
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.dailybreafrewrite.core.common.AppConstants
@@ -19,6 +20,7 @@ import javax.inject.Inject
 
 data class HomeUiState(
     val articles: List<Article> = emptyList(),
+    val topIndex: Int = 0,
     val selectedCategory: String = AppConstants.CATEGORIES.first(),
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
@@ -31,8 +33,8 @@ data class HomeUiState(
 
 sealed interface HomeAction {
     data class SelectCategory(val category: String) : HomeAction
-    data object SwipeLeft : HomeAction
-    data object SwipeRight : HomeAction
+    data object Next : HomeAction
+    data object Previous : HomeAction
     data class ToggleSaved(val url: String) : HomeAction
     data object TappedCard : HomeAction
     data object Refresh : HomeAction
@@ -45,13 +47,15 @@ sealed interface HomeAction {
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val repository: ArticleRepository,
+    private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(HomeUiState())
+    private val _state = MutableStateFlow(
+        HomeUiState(topIndex = savedStateHandle.get<Int>(KEY_TOP_INDEX) ?: 0)
+    )
     val state: StateFlow<HomeUiState> = _state.asStateFlow()
 
     private var observeJob: Job? = null
-    private var swipedCount = 0
 
     init {
         observeCategory(_state.value.selectedCategory)
@@ -60,11 +64,18 @@ class HomeViewModel @Inject constructor(
     fun onAction(action: HomeAction) {
         when (action) {
             is HomeAction.SelectCategory -> {
-                _state.update { it.copy(selectedCategory = action.category) }
+                updateTopIndex(0)
+                _state.update {
+                    it.copy(
+                        selectedCategory = action.category,
+                        currentPage = 1,
+                        hasMorePages = true,
+                    )
+                }
                 observeCategory(action.category)
             }
-            HomeAction.SwipeLeft -> onCardSwiped()
-            HomeAction.SwipeRight -> onCardSwiped()
+            HomeAction.Next -> goNext()
+            HomeAction.Previous -> goPrevious()
             is HomeAction.ToggleSaved -> toggleSaved(action.url)
             HomeAction.TappedCard -> { }
             HomeAction.Refresh -> pullToRefresh()
@@ -82,24 +93,39 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    private fun onCardSwiped() {
-        swipedCount++
-        val articleCount = _state.value.articles.size
-        val remaining = articleCount - swipedCount
+    private fun goNext() {
+        val current = _state.value.topIndex
+        if (current < _state.value.articles.lastIndex) {
+            updateTopIndex(current + 1)
+        }
+        maybePrefetch()
+    }
 
-        if (remaining <= AppConstants.Card.PREFETCH_THRESHOLD && _state.value.hasMorePages) {
-            val nextPage = _state.value.currentPage + 1
+    private fun goPrevious() {
+        val current = _state.value.topIndex
+        if (current > 0) {
+            updateTopIndex(current - 1)
+        }
+    }
+
+    private fun updateTopIndex(index: Int) {
+        savedStateHandle[KEY_TOP_INDEX] = index
+        _state.update { it.copy(topIndex = index) }
+    }
+
+    private fun maybePrefetch() {
+        val snapshot = _state.value
+        val remaining = snapshot.articles.lastIndex - snapshot.topIndex
+        if (remaining <= AppConstants.Card.PREFETCH_THRESHOLD && snapshot.hasMorePages) {
+            val nextPage = snapshot.currentPage + 1
             _state.update { it.copy(currentPage = nextPage) }
             viewModelScope.launch {
                 when (val result = repository.refreshHeadlines(
-                    category = _state.value.selectedCategory,
+                    category = snapshot.selectedCategory,
                     page = nextPage,
                 )) {
                     is Resource.Error -> {
-                        _state.update { it.copy(
-                            error = result.message,
-                            hasMorePages = false,
-                        ) }
+                        _state.update { it.copy(error = result.message, hasMorePages = false) }
                     }
                     is Resource.Success -> { }
                 }
@@ -135,6 +161,9 @@ class HomeViewModel @Inject constructor(
                                 }
                             }
                         } else {
+                            val clamped = _state.value.topIndex
+                                .coerceIn(0, maxOf(0, articles.lastIndex))
+                            updateTopIndex(clamped)
                             _state.update {
                                 it.copy(
                                     articles = articles,
@@ -175,6 +204,10 @@ class HomeViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    private companion object {
+        const val KEY_TOP_INDEX = "home_top_index"
     }
 }
 

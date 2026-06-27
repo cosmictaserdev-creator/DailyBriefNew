@@ -109,10 +109,11 @@ fun HomeScreen(
             } else {
                 CardStackLayout(
                     articles = state.articles,
-                    onSwipedLeft = { viewModel.onAction(HomeAction.SwipeLeft) },
-                    onSwipedRight = { article ->
-                        viewModel.onAction(HomeAction.ToggleSaved(article.url))
-                    },
+                    topIndex = state.topIndex,
+                    canGoNext = state.topIndex < state.articles.lastIndex,
+                    canGoPrevious = state.topIndex > 0,
+                    onNext = { viewModel.onAction(HomeAction.Next) },
+                    onPrevious = { viewModel.onAction(HomeAction.Previous) },
                     onCardTapped = { article -> onArticleTapped(article.url) },
                     modifier = Modifier
                         .fillMaxSize()

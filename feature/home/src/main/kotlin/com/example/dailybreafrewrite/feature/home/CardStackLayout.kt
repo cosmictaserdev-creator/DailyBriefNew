@@ -5,8 +5,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.runtime.key
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -14,23 +13,20 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -43,178 +39,174 @@ import coil3.compose.AsyncImage
 import com.example.dailybreafrewrite.core.common.AppConstants
 import com.example.dailybreafrewrite.core.domain.model.Article
 import kotlinx.coroutines.launch
-import kotlin.math.abs
-import kotlin.math.roundToInt
 
+private const val STACK_SCALE_STEP = 0.06f
+private const val STACK_PEEK_X_DP = 22f
+private const val STACK_PEEK_Y_DP = 12f
+private const val STACK_TILT_DEG = 4f
+private const val BLOCKED_DRAG_RESISTANCE = 0.3f
+
+/**
+ * Prev/next card deck with a 3D "peek-right" stack and depth promotion.
+ *
+ * Rest pose: each card behind the top is offset right + down, scaled down and tilted, so a
+ * fanned sliver peeks on the right (matching the Home mockup).
+ *
+ * - Drag left past the threshold => the next card promotes into the top slot, commit [onNext].
+ * - Drag right past the threshold => the previous card returns from the left into the top slot
+ *   while the deck sinks back, commit [onPrevious]. The returning card is fully centered by the
+ *   time the threshold is crossed, so the commit lands continuously.
+ * - Blocked directions (no previous at the start, no next at the end) resist and spring back.
+ *
+ * The discrete [topIndex] is owned by the ViewModel; only the live drag [Animatable] lives here,
+ * so every reaction runs inside [graphicsLayer] lambdas with no per-frame recomposition.
+ */
 @Composable
 fun CardStackLayout(
     articles: List<Article>,
-    onSwipedLeft: (Article) -> Unit,
-    onSwipedRight: (Article) -> Unit,
+    topIndex: Int,
+    canGoNext: Boolean,
+    canGoPrevious: Boolean,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit,
     onCardTapped: (Article) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (articles.isEmpty()) return
-
-    var currentIndex by remember { mutableStateOf(0) }
+    val safeTop = topIndex.coerceIn(0, articles.lastIndex)
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val density = LocalDensity.current
-        val swipeThresholdPx = with(density) {
-            (maxWidth * AppConstants.Card.SWIPE_DISPLACEMENT_FRACTION).toPx()
-        }
+        val widthPx = with(density) { maxWidth.toPx() }
+        val swipeThresholdPx = widthPx * AppConstants.Card.SWIPE_DISPLACEMENT_FRACTION
+        val peekXpx = with(density) { STACK_PEEK_X_DP.dp.toPx() }
+        val peekYpx = with(density) { STACK_PEEK_Y_DP.dp.toPx() }
+        val maxRot = AppConstants.Card.MAX_ROTATION_DEGREES
         val cardHeight = maxHeight * 0.72f
 
-        val visibleArticles = articles.drop(currentIndex).take(AppConstants.Card.STACK_COUNT)
-        if (visibleArticles.isEmpty()) return@BoxWithConstraints
+        val offsetX = remember { Animatable(0f) }
+        val scope = rememberCoroutineScope()
+
+        val dragModifier = Modifier.pointerInput(safeTop, canGoNext, canGoPrevious) {
+            detectHorizontalDragGestures(
+                onDragEnd = {
+                    scope.launch {
+                        val value = offsetX.value
+                        when {
+                            value <= -swipeThresholdPx && canGoNext -> {
+                                offsetX.animateTo(-widthPx, commitSpring)
+                                onNext()
+                                offsetX.snapTo(0f)
+                            }
+                            value >= swipeThresholdPx && canGoPrevious -> {
+                                offsetX.animateTo(widthPx, commitSpring)
+                                onPrevious()
+                                offsetX.snapTo(0f)
+                            }
+                            else -> offsetX.animateTo(0f, settleSpring)
+                        }
+                    }
+                },
+            ) { change, dragAmount ->
+                change.consume()
+                val raw = offsetX.value + dragAmount
+                val resisted = when {
+                    raw > 0f && !canGoPrevious -> raw * BLOCKED_DRAG_RESISTANCE
+                    raw < 0f && !canGoNext -> raw * BLOCKED_DRAG_RESISTANCE
+                    else -> raw
+                }
+                scope.launch { offsetX.snapTo(resisted) }
+            }
+        }
 
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(cardHeight)
                 .align(Alignment.TopCenter)
-                .padding(horizontal = 8.dp),
+                .padding(start = 4.dp, end = 28.dp, top = 8.dp, bottom = 8.dp),
         ) {
-            val stackSize = visibleArticles.size
-            for (stackIndex in (0 until stackSize).reversed()) {
-                val article = visibleArticles[stackIndex]
+            // Stack: top card plus the ones behind it, drawn back-to-front.
+            for (depth in (AppConstants.Card.STACK_COUNT - 1) downTo 0) {
+                val index = safeTop + depth
+                if (index > articles.lastIndex) continue
+                val article = articles[index]
+                val isTop = depth == 0
                 key(article.url) {
-                    val isTop = stackIndex == 0
-                    val scaleFactor = 1f - stackIndex * 0.07f
-                    val offsetY = (stackIndex * 16).dp
+                    StackCard(
+                        article = article,
+                        onClick = { onCardTapped(article) },
+                        modifier = Modifier
+                            .graphicsLayer {
+                                transformOrigin = TransformOrigin(0.5f, 0.5f)
+                                val off = offsetX.value
+                                val nextProgress = (-off / swipeThresholdPx).coerceIn(0f, 1f)
+                                val prevProgress = (off / swipeThresholdPx).coerceIn(0f, 1f)
+                                // Cards rise toward the front on a "next" drag and
+                                // sink toward the back on a "previous" drag.
+                                val effDepth = (depth - nextProgress + prevProgress)
+                                    .coerceAtLeast(0f)
+                                val scale = 1f - effDepth * STACK_SCALE_STEP
+                                scaleX = scale
+                                scaleY = scale
+                                if (isTop && off < 0f) {
+                                    // Top card follows the finger on a forward drag.
+                                    translationX = off
+                                    translationY = 0f
+                                    rotationZ = (off / widthPx * 2f * maxRot)
+                                        .coerceIn(-maxRot, maxRot)
+                                } else {
+                                    translationX = effDepth * peekXpx
+                                    translationY = effDepth * peekYpx
+                                    rotationZ = effDepth * STACK_TILT_DEG
+                                }
+                            }
+                            .then(if (isTop) dragModifier else Modifier),
+                    )
+                }
+            }
 
-                    if (isTop) {
-                        SwipeableTopCard(
-                            article = article,
-                            swipeThresholdPx = swipeThresholdPx,
-                            onSwipedLeft = {
-                                currentIndex++
-                                onSwipedLeft(article)
-                            },
-                            onSwipedRight = {
-                                currentIndex++
-                                onSwipedRight(article)
-                            },
-                            onCardTapped = { onCardTapped(article) },
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .offset(y = offsetY)
-                                .graphicsLayer {
-                                    scaleX = scaleFactor
-                                    scaleY = scaleFactor
-                                },
-                        )
-                    } else {
-                        ArticleCard(
-                            article = article,
-                            onClick = { onCardTapped(article) },
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .offset(y = offsetY)
-                                .graphicsLayer {
-                                    scaleX = scaleFactor
-                                    scaleY = scaleFactor
-                                },
-                        )
-                    }
+            // The previous card returns from the left while dragging right; it reaches the
+            // top slot exactly as the threshold is crossed, so the commit is seamless.
+            if (canGoPrevious && safeTop - 1 >= 0) {
+                val prevArticle = articles[safeTop - 1]
+                key("prev-${prevArticle.url}") {
+                    StackCard(
+                        article = prevArticle,
+                        onClick = { onCardTapped(prevArticle) },
+                        modifier = Modifier.graphicsLayer {
+                            transformOrigin = TransformOrigin(0.5f, 0.5f)
+                            val off = offsetX.value
+                            alpha = if (off > 0f) 1f else 0f
+                            val p = (off / swipeThresholdPx).coerceIn(0f, 1f)
+                            translationX = -widthPx * (1f - p)
+                            rotationZ = -maxRot * (1f - p)
+                        },
+                    )
                 }
             }
         }
     }
 }
 
+private val commitSpring = spring<Float>(
+    stiffness = Spring.StiffnessMedium,
+    dampingRatio = Spring.DampingRatioNoBouncy,
+)
+
+private val settleSpring = spring<Float>(
+    stiffness = Spring.StiffnessMedium,
+    dampingRatio = Spring.DampingRatioLowBouncy,
+)
+
 @Composable
-private fun SwipeableTopCard(
+private fun StackCard(
     article: Article,
-    swipeThresholdPx: Float,
-    onSwipedLeft: () -> Unit,
-    onSwipedRight: () -> Unit,
-    onCardTapped: () -> Unit,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val offsetX = remember { Animatable(0f) }
-    val scope = rememberCoroutineScope()
-
-    val progress = if (swipeThresholdPx > 0f) abs(offsetX.value) / swipeThresholdPx else 0f
-    val likeAlpha = if (offsetX.value > 0) (progress * 0.9f).coerceIn(0f, 0.9f) else 0f
-    val nopeAlpha = if (offsetX.value < 0) (progress * 0.9f).coerceIn(0f, 0.9f) else 0f
-
-    Box(
-        modifier = modifier
-            .graphicsLayer {
-                translationX = offsetX.value
-                rotationZ = (offsetX.value / 20f).coerceIn(
-                    -AppConstants.Card.MAX_ROTATION_DEGREES,
-                    AppConstants.Card.MAX_ROTATION_DEGREES
-                )
-                alpha = (1f - progress * 0.15f).coerceIn(0.7f, 1f)
-            }
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragEnd = {
-                        scope.launch {
-                            if (abs(offsetX.value) >= swipeThresholdPx) {
-                                val targetX = if (offsetX.value > 0) {
-                                    swipeThresholdPx * 3
-                                } else {
-                                    -swipeThresholdPx * 3
-                                }
-                                offsetX.animateTo(
-                                    targetValue = targetX,
-                                    animationSpec = spring(
-                                        stiffness = Spring.StiffnessMedium,
-                                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                                    ),
-                                )
-                                if (targetX > 0) onSwipedRight() else onSwipedLeft()
-                            } else {
-                                offsetX.animateTo(
-                                    targetValue = 0f,
-                                    animationSpec = spring(
-                                        stiffness = Spring.StiffnessMediumLow,
-                                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                                    ),
-                                )
-                            }
-                        }
-                    },
-                ) { change, dragAmount ->
-                    change.consume()
-                    scope.launch {
-                        offsetX.snapTo(offsetX.value + dragAmount.x)
-                    }
-                }
-            },
-    ) {
-        ArticleCard(article = article, onClick = onCardTapped)
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(20.dp)
-                .alpha(likeAlpha),
-        ) {
-            Text(
-                text = "LIKE",
-                color = Color(0xFF34C759),
-                fontWeight = FontWeight.Bold,
-                fontSize = 32.sp,
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(20.dp)
-                .alpha(nopeAlpha),
-        ) {
-            Text(
-                text = "NOPE",
-                color = Color(0xFFFF3B30),
-                fontWeight = FontWeight.Bold,
-                fontSize = 32.sp,
-            )
-        }
+    Box(modifier = modifier.fillMaxSize()) {
+        ArticleCard(article = article, onClick = onClick)
     }
 }
 
@@ -225,7 +217,9 @@ private fun ArticleCard(
     modifier: Modifier = Modifier,
 ) {
     Card(
-        modifier = modifier.clickable(onClick = onClick),
+        modifier = modifier
+            .fillMaxSize()
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(AppConstants.Card.CORNER_RADIUS.dp),
         colors = CardDefaults.cardColors(
             containerColor = Color(0xFF1C1C1E),
@@ -239,10 +233,12 @@ private fun ArticleCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1.2f)
-                    .clip(RoundedCornerShape(
-                        topStart = AppConstants.Card.CORNER_RADIUS.dp,
-                        topEnd = AppConstants.Card.CORNER_RADIUS.dp,
-                    )),
+                    .clip(
+                        RoundedCornerShape(
+                            topStart = AppConstants.Card.CORNER_RADIUS.dp,
+                            topEnd = AppConstants.Card.CORNER_RADIUS.dp,
+                        )
+                    ),
             ) {
                 if (article.urlToImage != null) {
                     AsyncImage(
@@ -259,7 +255,7 @@ private fun ArticleCard(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            text = article.sourceName.first().toString(),
+                            text = article.sourceName.firstOrNull()?.toString() ?: "?",
                             color = Color(0xFF8E8E93),
                             fontSize = 48.sp,
                         )

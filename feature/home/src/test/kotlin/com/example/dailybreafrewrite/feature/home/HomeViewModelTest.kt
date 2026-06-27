@@ -1,5 +1,6 @@
 package com.example.dailybreafrewrite.feature.home
 
+import androidx.lifecycle.SavedStateHandle
 import app.cash.turbine.test
 import com.example.dailybreafrewrite.core.common.AppConstants
 import com.example.dailybreafrewrite.core.common.Resource
@@ -43,7 +44,7 @@ class HomeViewModelTest {
         val repo = FakeArticleRepository().apply {
             headlinesFlow.value = Resource.Success(emptyList())
         }
-        val viewModel = HomeViewModel(repo)
+        val viewModel = HomeViewModel(repo, SavedStateHandle())
 
         assertEquals(true, viewModel.state.value.isLoading)
         assertTrue(viewModel.state.value.articles.isEmpty())
@@ -65,7 +66,7 @@ class HomeViewModelTest {
             )
         )
         val repo = FakeArticleRepository(initialArticles = articles)
-        val viewModel = HomeViewModel(repo)
+        val viewModel = HomeViewModel(repo, SavedStateHandle())
         advanceUntilIdle()
 
         assertFalse(viewModel.state.value.isLoading)
@@ -76,7 +77,7 @@ class HomeViewModelTest {
     @Test
     fun `select category updates selection and triggers refresh`() = runTest(testDispatcher) {
         val repo = FakeArticleRepository()
-        val viewModel = HomeViewModel(repo)
+        val viewModel = HomeViewModel(repo, SavedStateHandle())
         advanceUntilIdle()
 
         viewModel.onAction(HomeAction.SelectCategory("Sports"))
@@ -101,12 +102,58 @@ class HomeViewModelTest {
             )
         )
         val repo = FakeArticleRepository(initialArticles = articles)
-        val viewModel = HomeViewModel(repo)
+        val viewModel = HomeViewModel(repo, SavedStateHandle())
         advanceUntilIdle()
 
         viewModel.onAction(HomeAction.Refresh)
 
         assertTrue(viewModel.state.value.isRefreshing)
+    }
+
+    @Test
+    fun `next advances top index`() = runTest(testDispatcher) {
+        val repo = FakeArticleRepository(initialArticles = articlesOf(8))
+        val viewModel = HomeViewModel(repo, SavedStateHandle())
+        advanceUntilIdle()
+
+        viewModel.onAction(HomeAction.Next)
+
+        assertEquals(1, viewModel.state.value.topIndex)
+    }
+
+    @Test
+    fun `previous at start is a no-op`() = runTest(testDispatcher) {
+        val repo = FakeArticleRepository(initialArticles = articlesOf(8))
+        val viewModel = HomeViewModel(repo, SavedStateHandle())
+        advanceUntilIdle()
+
+        viewModel.onAction(HomeAction.Previous)
+
+        assertEquals(0, viewModel.state.value.topIndex)
+    }
+
+    @Test
+    fun `next near the end triggers prefetch`() = runTest(testDispatcher) {
+        // 8 articles, PREFETCH_THRESHOLD = 6: at topIndex 1, remaining (6) hits threshold.
+        val repo = FakeArticleRepository(initialArticles = articlesOf(8))
+        val viewModel = HomeViewModel(repo, SavedStateHandle())
+        advanceUntilIdle()
+        val before = repo.refreshCount
+
+        viewModel.onAction(HomeAction.Next)
+        advanceUntilIdle()
+
+        assertTrue(repo.refreshCount > before)
+    }
+
+    @Test
+    fun `top index is restored from saved state`() = runTest(testDispatcher) {
+        val repo = FakeArticleRepository(initialArticles = articlesOf(8))
+        val handle = SavedStateHandle(mapOf("home_top_index" to 3))
+        val viewModel = HomeViewModel(repo, handle)
+        advanceUntilIdle()
+
+        assertEquals(3, viewModel.state.value.topIndex)
     }
 
     @Test
@@ -121,6 +168,20 @@ class HomeViewModelTest {
             assertNotNull(article.sourceName)
         }
     }
+}
+
+private fun articlesOf(count: Int): List<Article> = (0 until count).map { i ->
+    Article(
+        url = "https://example.com/$i",
+        title = "Article $i",
+        description = "Description $i",
+        content = "Content $i",
+        sourceName = "Source $i",
+        sourceId = "source-$i",
+        author = null,
+        urlToImage = null,
+        publishedAt = "2026-01-01T00:00:00Z",
+    )
 }
 
 private class FakeArticleRepository(
